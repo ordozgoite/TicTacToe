@@ -18,7 +18,7 @@ struct Move: Codable {
 }
 
 struct Game: Codable {
-    let gameId: String
+    let id: String
     var player1Id: String
     var player2Id: String
     

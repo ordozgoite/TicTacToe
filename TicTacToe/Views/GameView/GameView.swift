@@ -14,15 +14,18 @@ struct GameView: View {
     
     var body: some View {
         VStack {
-            Text("Waiting for another player.")
+            Text(viewModel.gameNotification)
             
             Button {
                 mode.wrappedValue.dismiss()
+                viewModel.quitTheGame()
             } label: {
                 GameButton(title: "Quit", backgroundColor: .red)
             }
             
-            LoadingView()
+            if viewModel.game?.player2Id == "" {
+                LoadingView()
+            }
             
             Spacer()
             
@@ -32,7 +35,7 @@ struct GameView: View {
                         ZStack {
                             GameSquareView()
                             
-                            PlayerIndicatorView(systemImageName: viewModel.game.moves[i]?.indicator ?? "applelogo")
+                            PlayerIndicatorView(systemImageName: viewModel.game?.moves[i]?.indicator ?? "applelogo")
                         }
                         .onTapGesture {
                             viewModel.getPlayerMove(forIndex: i)
@@ -40,7 +43,22 @@ struct GameView: View {
                     }
                 }
             }
+            .disabled(viewModel.checkForGameBoardStatus())
             .padding(.horizontal)
+            .alert(item: $viewModel.alertItem) { alertItem in
+                alertItem.isForQuit ? Alert(title: alertItem.title, message: alertItem.message, dismissButton: .destructive(alertItem.buttonTitle, action: {
+                    self.mode.wrappedValue.dismiss()
+                    viewModel.quitTheGame()
+                }))
+                : Alert(title: alertItem.title, message: alertItem.message, primaryButton: .default(alertItem.buttonTitle, action: {
+                    viewModel.resetTheGame()
+                }), secondaryButton: .destructive(Text("Quit"), action: {
+                    self.mode.wrappedValue.dismiss()
+                    viewModel.quitTheGame()
+                }))
+            }
+        }.onAppear {
+            viewModel.getTheGame()
         }
     }
 }

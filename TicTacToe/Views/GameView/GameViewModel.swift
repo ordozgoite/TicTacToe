@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 final class GameViewModel: ObservableObject {
     
@@ -13,11 +14,23 @@ final class GameViewModel: ObservableObject {
     
     let columns: [GridItem] = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
     
-    @Published var game = Game(gameId: UUID().uuidString, player1Id: "player1", player2Id: "player2", playerIdThatCantMoveNow: "player2", winningPlayerId: "", rematchPlayerId: [], moves: Array(repeating: nil, count: 9))
+    @Published var game: Game? {
+        didSet {
+            checkIfGameIsOver()
+            
+            if game == nil {
+                updateGameNotificationFor(.finished)
+            } else {
+                game?.player2Id == "" ? updateGameNotificationFor(.waitingForPlayer) : updateGameNotificationFor(.started)
+            }
+        }
+    }
     
+    @Published var gameNotification = GameNotification.waitingForPlayer
     @Published var currentUser: User!
+    @Published var alertItem: AlertItem?
     
-    var isPlayer1Turn = true
+    private var cancellables: Set<AnyCancellable> = []
     
     private let winPatterns: Set<Set<Int>> = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]]
     
@@ -36,21 +49,28 @@ final class GameViewModel: ObservableObject {
     //MARK: - Move Methods
     
     func getPlayerMove(forIndex index: Int) {
-        if isSquareOccupied(in: game.moves, forIndex: index) { return }
+        guard game != nil else { return }
         
-        game.moves[index] = Move(isPlayer1Moving: isPlayer1Turn, boardIndex: index)
+        if isSquareOccupied(in: game!.moves, forIndex: index) { return }
+
+        game!.moves[index] = Move(isPlayer1Moving: isPlayer1(), boardIndex: index)
+        game!.playerIdThatCantMoveNow = currentUser.id
         
-        isPlayer1Turn.toggle()
-        
+        FirebaseService.shared.updateTheGame(game!)
+
         // block the move
-        
-        if checkForWinCondition(forPlayer1: true, in: game.moves) {
+
+        if checkForWinCondition(forPlayer1: isPlayer1(), in: game!.moves) {
             print("You have won!")
+            game!.winningPlayerId = currentUser.id
+            FirebaseService.shared.updateTheGame(game!)
             return
         }
-        
-        if didTheGameDraw(in: game.moves) {
+
+        if didTheGameDraw(in: game!.moves) {
             print("Draw!")
+            game!.winningPlayerId = "0"
+            FirebaseService.shared.updateTheGame(game!)
             return
         }
     }
@@ -74,6 +94,70 @@ final class GameViewModel: ObservableObject {
     
     func didTheGameDraw(in moves: [Move?]) -> Bool {
         return moves.compactMap { $0 }.count == 9
+    }
+    
+    func checkForGameBoardStatus() -> Bool {
+        return game != nil ? game!.playerIdThatCantMoveNow == currentUser.id : false
+    }
+    
+    func isPlayer1() -> Bool {
+        return game != nil ? game!.player1Id == currentUser.id : false
+    }
+    
+    func checkIfGameIsOver() {
+        guard game != nil else { return }
+        
+        if game!.winningPlayerId == "0" {
+            alertItem = AlertContext.draw
+        } else if game!.winningPlayerId != "" {
+            if game!.winningPlayerId == currentUser.id {
+                alertItem = AlertContext.youWin
+            } else {
+                alertItem = AlertContext.youLost
+            }
+        }
+    }
+    
+    func resetTheGame() {
+        guard game != nil else {
+            alertItem = AlertContext.quit
+            return
+        }
+        
+        if game!.rematchPlayerId.count == 1 {
+            // start new game
+            game!.moves = Array(repeating: nil, count: 9)
+            game!.winningPlayerId = ""
+            game!.playerIdThatCantMoveNow = game!.player2Id
+        } else if game!.rematchPlayerId.count == 2 {
+            game!.rematchPlayerId = []
+        }
+        
+        game!.rematchPlayerId.append(currentUser.id)
+        
+        FirebaseService.shared.updateTheGame(game!)
+    }
+    
+    func updateGameNotificationFor(_ state: GameState) {
+        switch state {
+        case .started:
+            gameNotification = GameNotification.gameHasStarted
+        case .waitingForPlayer:
+            gameNotification = GameNotification.waitingForPlayer
+        case .finished:
+            gameNotification = GameNotification.gameFinished
+        }
+    }
+    
+    func getTheGame() {
+        FirebaseService.shared.startGame(with: currentUser.id)
+        FirebaseService.shared.$game
+            .assign(to: \.game, on: self)
+            .store(in: &cancellables)
+    }
+    
+    func quitTheGame() {
+        FirebaseService.shared.quitTheGame()
     }
     
     //MARK: - User Methods

@@ -9,4 +9,5 @@ import Foundation
 
 struct User: Codable {
     var id = UUID().uuidString
+    var isPlayer1: Bool?
 }
