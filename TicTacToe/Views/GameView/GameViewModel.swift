@@ -128,6 +128,9 @@ final class GameViewModel: ObservableObject {
             // start new game
             game!.moves = Array(repeating: nil, count: 9)
             game!.winningPlayerId = ""
+            let newPlayer1Id = game!.player2Id
+            game!.player2Id = game!.player1Id
+            game!.player1Id = newPlayer1Id
             game!.playerIdThatCantMoveNow = game!.player2Id
         } else if game!.rematchPlayerId.count == 2 {
             game!.rematchPlayerId = []
